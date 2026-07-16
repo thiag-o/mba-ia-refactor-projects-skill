@@ -139,8 +139,10 @@ lança o subagente e, ao receber o resultado, imprime o bloco final.
   ou das rotas mapeadas) para a validação.
 - **Instrução explícita** de que o subagente deve, ele próprio, **ler
   `references/04-mvc-guidelines.md` e `references/05-refactoring-playbook.md`**
-  antes de refatorar, seguir as regras de agnosticismo e de preservação de
-  contrato, e **retornar** ao final: a árvore de diretórios resultante, o
+  antes de refatorar, seguir as regras de agnosticismo, de preservação de
+  contrato e de **nomear todo o código novo/refatorado em inglês** (sem traduzir
+  o contrato externo — ver passo 5), e **retornar** ao final: a árvore de
+  diretórios resultante, o
   resultado da validação (boot + endpoints) e a confirmação de zero anti-patterns
   remanescentes.
 
@@ -160,12 +162,20 @@ conversa seguindo os mesmos passos — mas prefira sempre a delegação.
    reescrever o que já está adequado.
 4. **Preserve o contrato externo**: as mesmas rotas/endpoints devem continuar
    respondendo com o mesmo contrato (métodos, paths, formato de resposta).
-5. **Valide** ao final, de forma agnóstica:
+5. **Nomeie todo o código em inglês**: todas as **variáveis, funções, métodos,
+   classes, módulos e arquivos** criados ou renomeados na refatoração devem usar
+   nomes em inglês, idiomáticos e descritivos (ex.: `create_order`,
+   `NotificationService`, `user_repository`), seguindo a convenção de
+   nomenclatura da linguagem detectada. **Exceção — não traduza o que faz parte
+   do contrato externo** (paths de rotas, nomes de campos JSON de request/response,
+   nomes de tabelas/colunas do banco já existentes): traduzi-los quebraria clientes
+   e persistência. Comentários e docstrings novos também em inglês.
+6. **Valide** ao final, de forma agnóstica:
    - **(a) Boot:** suba a aplicação e confirme que ela inicia sem erros.
    - **(b) Endpoints:** chame os endpoints originais e confirme que respondem.
      Se houver `api.http`, README ou coleção de rotas, use-os como fonte de
      verdade das rotas a exercitar.
-6. Ao receber o retorno do subagente, a orquestração imprime o bloco final com a
+7. Ao receber o retorno do subagente, a orquestração imprime o bloco final com a
    árvore de diretórios e o resultado da validação reportados por ele:
 
 ```
