@@ -1,11 +1,5 @@
 # Criação de Skills — Refatoração Arquitetural Automatizada
 
-- **CRITICAL:** Falhas graves de arquitetura ou segurança que impedem o funcionamento correto, expõem dados sensíveis (ex: credenciais hardcoded, SQL Injection) ou violam completamente a separação de responsabilidades (ex: "God Class" contendo banco de dados, lógicas complexas e roteamento no mesmo arquivo).
-- **HIGH:** Fortes violações do padrão MVC ou princípios SOLID que dificultam muito a manutenção e testes (ex: lógicas de negócio pesadas presas dentro de Controllers, forte acoplamento sem Injeção de Dependência, ou uso de estado global mutável em toda a aplicação).
-- **MEDIUM:** Problemas de padronização, duplicação de código ou gargalos de performance moderada (ex: Queries N+1 no banco de dados, uso inadequado de middlewares, validações ausentes nas rotas).
-- **LOW:** Melhorias de legibilidade, nomenclatura de variáveis ruins, ou "magic numbers" soltos pelo código.
-
-
 ## Análise Manual
 ## code-smells-project
 
@@ -34,3 +28,50 @@
 ```
  
 
+## ecommerce-api-legacy
+### PROBLEMAS
+
+- CRITICAL: Uma única class ``AppManager`` lidando com absolutamente tudo "God Class";
+
+- MEDIUM: Validações ausentes, a validação utilizada para aprovar um cartão válido é apenas de o número do cartão começar com o número "4", exemplo:
+```javaScript
+console.log(`Processando cartão ${cc} na chave ${config.paymentGatewayKey}`);
+let status = cc.startsWith("4") ? "PAID" : "DENIED";
+```
+
+- MEDIUM: As rotas "/api/admin/financial-report" e "/api/users/:id" estão totalmente abertas, não possuem nenhum middleware ou guard para restringir o acesso. 
+
+- LOW: Problemas de legibilidade, há diversas variáveis sem um nome legivel que dificultam entender do que se trata cada dado, aqui está um exemplo da ocorrência: 
+```javaScript
+let u = req.body.usr;
+let e = req.body.eml;
+let p = req.body.pwd;
+let cid = req.body.c_id;
+let cc = req.body.card;
+
+if (!u || !e || !cid || !cc) return res.status(400).send("Bad Request");
+```
+
+- LOW: Magic number no arquivo ``utils.js``, dentro da função ``badCrypto`` há um número solto ``10000``, aqui está a evidência:
+```javaScript
+ for(let i = 0; i < 10000; i++) {
+        hash += Buffer.from(pwd).toString('base64').substring(0, 2);
+    }
+```
+
+## task-manager-api
+### PROBLEMAS
+
+- HIGHT: Presença de regra de negócio pesada nas funções dos controllers;
+
+- MEDIUM: Há duplicação de código. O trecho abaixo se repete em pelo menos em sete pontos do projeto, apresentando apenas pequenas algumas variações:
+```python
+if t.due_date < datetime.utcnow():
+            if t.status != 'done' and t.status != 'cancelled':
+``` 
+
+- MEDIUM: Sem paginação para o GET /tasks, conforme os dados vão aumentando possívelmente isso poderá se tornar um gargalo à aplicação. 
+
+- LOW: Há a presença de mágic numbers. Em ``user_report`` existe um if com ``t.priority <= 2``, o ideal seria definir um enum ou uma constante para armazenar o nível de prioridade.
+
+- LOW: Repetição de regex de validação de email no arquivo ``user_routes``, o regex aparece duas vezes e já existe um regex de validação de email em ``helpers.py``.
