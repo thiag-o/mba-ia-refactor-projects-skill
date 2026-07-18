@@ -1,88 +1,84 @@
-from flask import Flask, jsonify, request
+"""Composition root / entry point.
+
+Instantiates and wires the layers (dependency injection), registers routes and
+the central error handler, and boots the server. No business logic lives here.
+"""
+import logging
+
+from flask import Flask
 from flask_cors import CORS
-import controllers
-from database import get_db
 
-app = Flask(__name__)
-app.config["SECRET_KEY"] = "minha-chave-super-secreta-123"
-app.config["DEBUG"] = True
-CORS(app)
+import database
+from config import settings
+from controllers.admin_controller import AdminController
+from controllers.health_controller import HealthController
+from controllers.order_controller import OrderController
+from controllers.product_controller import ProductController
+from controllers.report_controller import ReportController
+from controllers.user_controller import UserController
+from middlewares.error_handler import register_error_handlers
+from models.order_repository import OrderRepository
+from models.product_repository import ProductRepository
+from models.report_repository import ReportRepository
+from models.user_repository import UserRepository
+from services.notification_service import NotificationService
+from services.order_service import OrderService
+from services.product_service import ProductService
+from services.report_service import ReportService
+from services.user_service import UserService
+from views.routes import register_routes
 
-app.add_url_rule("/produtos", "listar_produtos", controllers.listar_produtos, methods=["GET"])
-app.add_url_rule("/produtos/busca", "buscar_produtos", controllers.buscar_produtos, methods=["GET"])
-app.add_url_rule("/produtos/<int:id>", "buscar_produto", controllers.buscar_produto, methods=["GET"])
-app.add_url_rule("/produtos", "criar_produto", controllers.criar_produto, methods=["POST"])
-app.add_url_rule("/produtos/<int:id>", "atualizar_produto", controllers.atualizar_produto, methods=["PUT"])
-app.add_url_rule("/produtos/<int:id>", "deletar_produto", controllers.deletar_produto, methods=["DELETE"])
+logger = logging.getLogger(__name__)
 
-app.add_url_rule("/usuarios", "listar_usuarios", controllers.listar_usuarios, methods=["GET"])
-app.add_url_rule("/usuarios/<int:id>", "buscar_usuario", controllers.buscar_usuario, methods=["GET"])
-app.add_url_rule("/usuarios", "criar_usuario", controllers.criar_usuario, methods=["POST"])
-app.add_url_rule("/login", "login", controllers.login, methods=["POST"])
 
-app.add_url_rule("/pedidos", "criar_pedido", controllers.criar_pedido, methods=["POST"])
-app.add_url_rule("/pedidos", "listar_todos_pedidos", controllers.listar_todos_pedidos, methods=["GET"])
-app.add_url_rule("/pedidos/usuario/<int:usuario_id>", "listar_pedidos_usuario", controllers.listar_pedidos_usuario, methods=["GET"])
-app.add_url_rule("/pedidos/<int:pedido_id>/status", "atualizar_status_pedido", controllers.atualizar_status_pedido, methods=["PUT"])
+def create_app():
+    """Application factory: build, wire and configure the Flask app."""
+    app = Flask(__name__)
+    app.config["SECRET_KEY"] = settings.SECRET_KEY
+    app.config["DEBUG"] = settings.DEBUG
 
-app.add_url_rule("/relatorios/vendas", "relatorio_vendas", controllers.relatorio_vendas, methods=["GET"])
+    # Restrict CORS to a configured allow-list (no open wildcard).
+    CORS(app, origins=settings.CORS_ORIGINS)
 
-app.add_url_rule("/health", "health_check", controllers.health_check, methods=["GET"])
+    # Per-request DB connection lifecycle.
+    database.init_app(app)
 
-@app.route("/")
-def index():
-    return jsonify({
-        "mensagem": "Bem-vindo à API da Loja",
-        "versao": "1.0.0",
-        "endpoints": {
-            "produtos": "/produtos",
-            "usuarios": "/usuarios",
-            "pedidos": "/pedidos",
-            "login": "/login",
-            "relatorios": "/relatorios/vendas",
-            "health": "/health"
-        }
-    })
+    # --- Dependency injection wiring (composition root) ---
+    get_connection = database.get_db
 
-@app.route("/admin/reset-db", methods=["POST"])
-def reset_database():
-    db = get_db()
-    cursor = db.cursor()
-    cursor.execute("DELETE FROM itens_pedido")
-    cursor.execute("DELETE FROM pedidos")
-    cursor.execute("DELETE FROM produtos")
-    cursor.execute("DELETE FROM usuarios")
-    db.commit()
-    print("!!! BANCO DE DADOS RESETADO !!!")
-    return jsonify({"mensagem": "Banco de dados resetado", "sucesso": True}), 200
+    product_repository = ProductRepository(get_connection)
+    user_repository = UserRepository(get_connection)
+    order_repository = OrderRepository(get_connection)
+    report_repository = ReportRepository(get_connection)
 
-@app.route("/admin/query", methods=["POST"])
-def executar_query():
-    dados = request.get_json()
-    query = dados.get("sql", "")
-    if not query:
-        return jsonify({"erro": "Query não informada"}), 400
+    notification_service = NotificationService()
+    product_service = ProductService(product_repository)
+    user_service = UserService(user_repository)
+    order_service = OrderService(order_repository, notification_service)
+    report_service = ReportService(report_repository)
 
-    db = get_db()
-    cursor = db.cursor()
-    try:
-        cursor.execute(query)
-        if query.strip().upper().startswith("SELECT"):
-            rows = cursor.fetchall()
-            result = [dict(row) for row in rows]
-            return jsonify({"dados": result, "sucesso": True}), 200
-        else:
-            db.commit()
-            return jsonify({"mensagem": "Query executada", "sucesso": True}), 200
-    except Exception as e:
-        return jsonify({"erro": str(e)}), 500
+    controllers = {
+        "product": ProductController(product_service),
+        "user": UserController(user_service),
+        "order": OrderController(order_service),
+        "report": ReportController(report_service),
+        "health": HealthController(product_repository, user_repository, order_repository),
+        "admin": AdminController(get_connection),
+    }
+
+    register_routes(app, controllers)
+    register_error_handlers(app)
+    return app
+
+
+app = create_app()
+
 
 if __name__ == "__main__":
-
-    get_db()
-    print("=" * 50)
-    print("SERVIDOR INICIADO")
-    print("Rodando em http://localhost:5000")
-    print("=" * 50)
-
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    )
+    database.init_schema_and_seed()
+    logger.info("SERVIDOR INICIADO - http://localhost:5000")
+    app.run(host="0.0.0.0", port=5000, debug=settings.DEBUG)
